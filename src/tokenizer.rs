@@ -1,15 +1,19 @@
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufReader, Read};
 use std::mem;
+use std::rc::Rc;
 
 pub struct Tokenizer {
     vocab_size: u32,
     max_token_length: u32,
     vocab_scores: Vec<f32>,
-    vocab_tokens: Vec<String>,
+    vocab_tokens: Vec<Rc<String>>,
+    stoi: HashMap<Rc<String>, u32>,
 }
 
 const BOS_TOKEN: u32 = 1;
+const EOS_TOKEN: u32 = 2;
 
 // The ASCII characters saved as an array of strings.
 static BYTE_PIECES: [&'static str; 128] = [
@@ -37,7 +41,8 @@ impl Tokenizer {
 
         let mut vocab_scores = Vec::with_capacity(vocab_size as usize);
         let mut vocab_tokens = Vec::with_capacity(vocab_size as usize);
-        for _ in 0..vocab_size {
+        let mut stoi = HashMap::with_capacity(vocab_size as usize);
+        for i in 0..vocab_size {
             reader.read_exact(buf.as_mut_slice())?;
             vocab_scores.push(f32::from_le_bytes(buf));
 
@@ -47,7 +52,9 @@ impl Tokenizer {
             reader.read_exact(token_buf.as_mut_slice())?;
             let token = String::from_utf8(token_buf)
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-            vocab_tokens.push(token);
+            let token = Rc::new(token);
+            vocab_tokens.push(Rc::clone(&token));
+            stoi.insert(Rc::clone(&token), i);
         }
 
         Ok(Tokenizer {
@@ -55,6 +62,7 @@ impl Tokenizer {
             max_token_length,
             vocab_scores,
             vocab_tokens,
+            stoi,
         })
     }
 
@@ -77,6 +85,74 @@ impl Tokenizer {
         }
         piece
     }
+
+    pub fn encode(&self, text: &str, bos: bool, eos: bool) -> Vec<u32> {
+        let mut tokens = Vec::new();
+
+        // Add BOS token if specified
+        if bos {
+            tokens.push(BOS_TOKEN);
+        }
+
+        // from llama2.c:
+        // add_dummy_prefix is true by default
+        // so prepend a dummy prefix token to the input string, but only if text != ""
+        // TODO: pretty sure this isn't correct in the general case but I don't have the
+        // energy to read more of the sentencepiece code to figure out what it's doing
+        if text.len() > 0 {
+            let space = Rc::new(" ".to_string());
+            let index = self.stoi.get(&space).unwrap();
+            tokens.push(*index);
+        }
+
+        for c in text.chars() {
+            if let Some(index) = self.stoi.get(&Rc::new(c.to_string())) {
+                tokens.push(*index);
+            } else {
+                for byte in c.to_string().as_bytes() {
+                    // from llama2.c:
+                    // byte_fallback encoding: just encode each byte as a token
+                    // +3 is here because the first 3 vocab elements are <unk>, <s>, </s>
+                    // so the individual bytes only start at index 3
+                    tokens.push(*byte as u32 + 3);
+                }
+            }
+        }
+
+        loop {
+            let mut best_score: Option<f32> = None;
+            let mut best_index: Option<usize> = None;
+            let mut best_token_id: Option<u32> = None;
+
+            for i in 0..tokens.len() - 1 {
+                let pair = self.vocab_tokens[tokens[i] as usize].as_str().to_string()
+                    + self.vocab_tokens[tokens[i + 1] as usize].as_str();
+                if let Some(index) = self.stoi.get(&Rc::new(pair)) {
+                    let score = self.vocab_scores[*index as usize];
+                    if best_score.is_none_or(|s| s < score) {
+                        best_score = Some(score);
+                        best_index = Some(i);
+                        best_token_id = Some(*index);
+                    }
+                }
+            }
+
+            if let Some(index) = best_index {
+                // merge the best pair
+                tokens[index] = best_token_id.unwrap();
+                tokens.remove(index + 1);
+            } else {
+                // no more pairs to merge
+                break;
+            }
+        }
+
+        if eos {
+            tokens.push(EOS_TOKEN);
+        }
+
+        tokens
+    }
 }
 
 #[cfg(test)]
@@ -98,15 +174,15 @@ mod tests {
 
         // spot check some tokens
         assert_eq!(0.0, *tokenizer.vocab_scores.get(0).unwrap());
-        assert_eq!("<unk>", tokenizer.vocab_tokens.get(0).unwrap());
+        assert_eq!("<unk>", tokenizer.vocab_tokens.get(0).unwrap().as_str());
 
         assert_eq!(-41.0, *tokenizer.vocab_scores.get(300).unwrap());
-        assert_eq!(" ha", tokenizer.vocab_tokens.get(300).unwrap());
+        assert_eq!(" ha", tokenizer.vocab_tokens.get(300).unwrap().as_str());
 
         assert_eq!(-252.0, *tokenizer.vocab_scores.get(VOCAB_SIZE - 1).unwrap());
         assert_eq!(
             "\u{200a}",
-            tokenizer.vocab_tokens.get(VOCAB_SIZE - 1).unwrap()
+            tokenizer.vocab_tokens.get(VOCAB_SIZE - 1).unwrap().as_str()
         );
 
         Ok(())
@@ -131,5 +207,14 @@ mod tests {
         // test decoding of a token that designates a raw byte
         let decoded = tokenizer.decode(1, 65);
         assert_eq!("A", decoded);
+    }
+
+    #[test]
+    fn test_encode() {
+        let tokenizer = Tokenizer::new(STORIES_260K_TOKENIZER_PATH, VOCAB_SIZE as u32).unwrap();
+
+        let text = "Once upon a time,";
+        let tokens = tokenizer.encode(text, true, true);
+        assert_eq!(vec![1, 403, 407, 261, 378, 432, 2], tokens);
     }
 }
