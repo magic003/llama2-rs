@@ -1,5 +1,4 @@
-use std::fs::File;
-use std::io::{self, BufReader, Read, Seek};
+use std::io::{self, BufRead};
 use std::mem;
 
 pub struct Config {
@@ -11,15 +10,10 @@ pub struct Config {
     pub vocab_size: u32, // vocabulary size
     pub seq_len: u32,    // max sequence length
     pub shared_weights: bool, // whether to share the weights between embedding and output classifier layer
-
-    pub bytes_in_file: usize, // number of bytes read from the file
 }
 
 impl Config {
-    pub fn from_file(checkpoint: &str) -> io::Result<Config> {
-        let file = File::open(checkpoint)?;
-        let mut reader = BufReader::new(file);
-
+    pub fn from_reader(reader: &mut dyn BufRead) -> io::Result<Config> {
         let mut buf = [0; mem::size_of::<u32>()];
 
         reader.read_exact(buf.as_mut_slice())?;
@@ -45,8 +39,6 @@ impl Config {
         reader.read_exact(buf.as_mut_slice())?;
         let seq_len = u32::from_le_bytes(buf);
 
-        let bytes_in_file = reader.stream_position()? as usize;
-
         Ok(Config {
             dim,
             hidden_dim,
@@ -56,7 +48,6 @@ impl Config {
             vocab_size,
             seq_len,
             shared_weights,
-            bytes_in_file,
         })
     }
 }
@@ -64,10 +55,12 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{fs::File, io::BufReader};
 
     #[test]
     fn test_config_from_file() -> io::Result<()> {
-        let config = Config::from_file("stories260K/stories260K.bin")?;
+        let file = File::open("stories260K/stories260K.bin")?;
+        let config = Config::from_reader(&mut BufReader::new(file))?;
 
         assert_eq!(64, config.dim);
         assert_eq!(172, config.hidden_dim);
@@ -77,7 +70,6 @@ mod tests {
         assert_eq!(512, config.vocab_size);
         assert_eq!(512, config.seq_len);
         assert_eq!(true, config.shared_weights);
-        assert_eq!(7 * mem::size_of::<u32>(), config.bytes_in_file);
 
         Ok(())
     }

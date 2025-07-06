@@ -1,5 +1,4 @@
-use std::fs::File;
-use std::io::{self, BufReader, Read};
+use std::io::{self, BufRead, Read};
 use std::mem;
 use std::rc::Rc;
 
@@ -25,79 +24,77 @@ pub struct TransformerWeights {
 }
 
 impl TransformerWeights {
-    pub fn from_file(checkpoint: &str, config: &Config) -> io::Result<TransformerWeights> {
-        let file = File::open(checkpoint)?;
-        let mut reader = BufReader::new(file);
-        // skip the config header. TODO: maybe pass in a reader?
-        reader.seek_relative(config.bytes_in_file as i64)?;
-
+    pub fn from_reader(
+        reader: &mut dyn BufRead,
+        config: &Config,
+    ) -> io::Result<TransformerWeights> {
         let head_size = config.dim / config.n_heads;
 
         let token_embedding_table = {
             let len = (config.vocab_size * config.dim) as usize;
-            Rc::new(Self::read_f32_vec(&mut reader, len)?)
+            Rc::new(Self::read_f32_vec(reader, len)?)
         };
 
         let rms_att_weight = {
             let len = (config.n_layers * config.dim) as usize;
-            Self::read_f32_vec(&mut reader, len)?
+            Self::read_f32_vec(reader, len)?
         };
 
         let wq = {
             let len = (config.n_layers * config.dim * config.n_heads * head_size) as usize;
-            Self::read_f32_vec(&mut reader, len)?
+            Self::read_f32_vec(reader, len)?
         };
 
         let wk = {
             let len = (config.n_layers * config.dim * config.n_kv_heads * head_size) as usize;
-            Self::read_f32_vec(&mut reader, len)?
+            Self::read_f32_vec(reader, len)?
         };
 
         let wv = {
             let len = (config.n_layers * config.dim * config.n_kv_heads * head_size) as usize;
-            Self::read_f32_vec(&mut reader, len)?
+            Self::read_f32_vec(reader, len)?
         };
 
         let wo = {
             let len = (config.n_layers * config.n_heads * head_size * config.dim) as usize;
-            Self::read_f32_vec(&mut reader, len)?
+            Self::read_f32_vec(reader, len)?
         };
 
         let rms_ffn_weight = {
             let len = (config.n_layers * config.dim) as usize;
-            Self::read_f32_vec(&mut reader, len)?
+            Self::read_f32_vec(reader, len)?
         };
 
         let w1 = {
             let len = (config.n_layers * config.hidden_dim * config.dim) as usize;
-            Self::read_f32_vec(&mut reader, len)?
+            Self::read_f32_vec(reader, len)?
         };
 
         let w2 = {
             let len = (config.n_layers * config.dim * config.hidden_dim) as usize;
-            Self::read_f32_vec(&mut reader, len)?
+            Self::read_f32_vec(reader, len)?
         };
 
         let w3 = {
             let len = (config.n_layers * config.hidden_dim * config.dim) as usize;
-            Self::read_f32_vec(&mut reader, len)?
+            Self::read_f32_vec(reader, len)?
         };
 
         let rms_final_weight = {
             let len = config.dim as usize;
-            Self::read_f32_vec(&mut reader, len)?
+            Self::read_f32_vec(reader, len)?
         };
 
         // from llama2.c:
         // skip what used to be freq_cis_real and freq_cis_imag (for RoPE)
         let skip_bytes = config.seq_len * head_size * (mem::size_of::<f32>() as u32);
-        reader.seek_relative(skip_bytes as i64)?;
+        reader.take(skip_bytes as u64);
 
         let wcls = if config.shared_weights {
             Rc::clone(&token_embedding_table)
         } else {
             let len = (config.vocab_size * config.dim) as usize;
-            Rc::new(Self::read_f32_vec(&mut reader, len)?)
+            Rc::new(Self::read_f32_vec(reader, len)?)
         };
 
         Ok(TransformerWeights {
@@ -116,7 +113,7 @@ impl TransformerWeights {
         })
     }
 
-    fn read_f32_vec(reader: &mut impl Read, len: usize) -> io::Result<Vec<f32>> {
+    fn read_f32_vec(reader: &mut dyn BufRead, len: usize) -> io::Result<Vec<f32>> {
         let f32_size = mem::size_of::<f32>();
         let size = len * f32_size;
         let mut buf = vec![0; size];
@@ -133,13 +130,17 @@ impl TransformerWeights {
 
 #[cfg(test)]
 mod tests {
+    use std::{fs::File, io::BufReader};
+
     use super::*;
     use crate::model::config::Config;
 
     #[test]
     fn test_transformer_weights_from_file() -> io::Result<()> {
-        let config = Config::from_file("stories260K/stories260K.bin")?;
-        let weights = TransformerWeights::from_file("stories260K/stories260K.bin", &config)?;
+        let file = File::open("stories260K/stories260K.bin")?;
+        let mut reader = BufReader::new(file);
+        let config = Config::from_reader(&mut reader)?;
+        let weights = TransformerWeights::from_reader(&mut reader, &config)?;
 
         assert_eq!(
             (config.vocab_size * config.dim) as usize,
