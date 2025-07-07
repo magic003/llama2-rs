@@ -4,23 +4,23 @@ use std::rc::Rc;
 
 use crate::model::config::Config;
 pub struct TransformerWeights {
-    token_embedding_table: Rc<Vec<f32>>, // (vocab_size, dim)
+    pub token_embedding_table: Rc<Vec<f32>>, // (vocab_size, dim)
     // weights for rmsnorms
-    rms_att_weight: Vec<f32>, // (layer, dim,)
-    rms_ffn_weight: Vec<f32>, // (layer, dim,)
+    pub rms_att_weight: Vec<f32>, // (layer, dim,)
+    pub rms_ffn_weight: Vec<f32>, // (layer, dim,)
     // weights for matmuls. note dim == n_heads * head_size
-    wq: Vec<f32>, // (layer, dim, n_heads * head_size)
-    wk: Vec<f32>, // (layer, dim, n_kv_heads * head_size)
-    wv: Vec<f32>, // (layer, dim, n_kv_heads * head_size)
-    wo: Vec<f32>, // (layer, n_heads * head_size, dim)
+    pub wq: Vec<f32>, // (layer, dim, n_heads * head_size)
+    pub wk: Vec<f32>, // (layer, dim, n_kv_heads * head_size)
+    pub wv: Vec<f32>, // (layer, dim, n_kv_heads * head_size)
+    pub wo: Vec<f32>, // (layer, n_heads * head_size, dim)
     // weights for ffn
-    w1: Vec<f32>, // (layer, hidden_dim, dim)
-    w2: Vec<f32>, // (layer, dim, hidden_dim)
-    w3: Vec<f32>, // (layer, hidden_dim, dim)
+    pub w1: Vec<f32>, // (layer, hidden_dim, dim)
+    pub w2: Vec<f32>, // (layer, dim, hidden_dim)
+    pub w3: Vec<f32>, // (layer, hidden_dim, dim)
     // final rmsnorm
-    rms_final_weight: Vec<f32>, // (dim,)
+    pub rms_final_weight: Vec<f32>, // (dim,)
     // (optional) classifier weights for the logits, on the last layer
-    wcls: Rc<Vec<f32>>,
+    pub wcls: Rc<Vec<f32>>,
 }
 
 impl TransformerWeights {
