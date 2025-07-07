@@ -10,6 +10,10 @@ pub struct Transformer {
 
 struct RunState {
     xb: Vec<f32>, // activation inside a residual branch. (dim, )
+
+    // kv cache
+    key_cache: Vec<f32>,   // (layer, seq_len, kv_dim)
+    value_cache: Vec<f32>, // (layer, seq_len, kv_dim)
 }
 
 const EPS: f32 = 1e-5;
@@ -20,6 +24,7 @@ impl Transformer {
         let config = &self.config;
         let dim = config.dim as usize;
         let weights = &self.weights;
+        let kv_dim = ((config.dim / config.n_heads) * config.n_kv_heads) as usize;
 
         let token = token as usize;
         let x = weights.token_embedding_table[token * dim..(token + 1) * dim].as_ref();
@@ -32,6 +37,12 @@ impl Transformer {
                 &weights.rms_att_weight[layer * dim..(layer + 1) * dim],
                 EPS,
             );
+
+            // key and value from the kv cache
+            let kv_layer = layer * config.seq_len as usize * kv_dim;
+            let offset = kv_layer + pos * kv_dim;
+            let k = &self.state.key_cache[offset..(offset + kv_dim)];
+            let v = &self.state.value_cache[offset..(offset + kv_dim)];
         }
         vec![]
     }
