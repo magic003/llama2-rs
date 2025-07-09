@@ -10,6 +10,7 @@ pub struct Transformer {
 
 struct RunState {
     xb: Vec<f32>, // activation inside a residual branch. (dim, )
+    q: Vec<f32>,  // query (dim, )
 
     // kv cache
     key_cache: Vec<f32>,   // (layer, seq_len, kv_dim)
@@ -39,10 +40,21 @@ impl Transformer {
             );
 
             // key and value from the kv cache
-            let kv_layer = layer * config.seq_len as usize * kv_dim;
-            let offset = kv_layer + pos * kv_dim;
-            let k = &self.state.key_cache[offset..(offset + kv_dim)];
-            let v = &self.state.value_cache[offset..(offset + kv_dim)];
+            let kv_size = config.seq_len as usize * kv_dim;
+            let offset = layer * kv_size + pos * kv_dim;
+            let k = &mut self.state.key_cache[offset..(offset + kv_dim)];
+            let v = &mut self.state.value_cache[offset..(offset + kv_dim)];
+
+            // qkv for this position
+            let q = &mut self.state.q;
+            let qw_size = dim * dim;
+            let kvw_size = dim * kv_dim;
+            let wq = &weights.wq[layer * qw_size..(layer + 1) * qw_size];
+            let wk = &weights.wk[layer * kvw_size..(layer + 1) * kvw_size];
+            let wv = &weights.wv[layer * kvw_size..(layer + 1) * kvw_size];
+            nn::matmul(q, x, wq, dim, dim);
+            nn::matmul(k, x, wk, kv_dim, dim);
+            nn::matmul(v, x, wv, kv_dim, dim);
         }
         vec![]
     }
