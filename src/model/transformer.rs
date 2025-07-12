@@ -103,6 +103,9 @@ impl Transformer {
                                 .sum::<f32>();
                             att[t] = score / (head_dim as f32).sqrt();
                         }
+
+                        // softmax the attention scores, from 0..pos inclusively
+                        nn::softmax(&mut att[..=pos]);
                     });
                 }
             });
