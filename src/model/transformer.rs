@@ -1,3 +1,5 @@
+use std::thread;
+
 use crate::model::config::Config;
 use crate::model::weights::TransformerWeights;
 use crate::nn;
@@ -9,8 +11,9 @@ pub struct Transformer {
 }
 
 struct RunState {
-    xb: Vec<f32>, // activation inside a residual branch. (dim, )
-    q: Vec<f32>,  // query (dim, )
+    xb: Vec<f32>,  // activation inside a residual branch. (dim, )
+    q: Vec<f32>,   // query (dim, )
+    att: Vec<f32>, // attention values. (n_heads, seq_len)
 
     // kv cache
     key_cache: Vec<f32>,   // (layer, seq_len, kv_dim)
@@ -23,8 +26,9 @@ impl Transformer {
     pub fn forward(&mut self, token: u32, pos: usize) -> Vec<f32> {
         // a few convenience variables
         let config = &self.config;
+        let state = &mut self.state;
         let dim = config.dim as usize;
-        let head_size = dim / config.n_heads as usize;
+        let head_dim = dim / config.n_heads as usize;
         let weights = &self.weights;
         let kv_dim = ((config.dim / config.n_heads) * config.n_kv_heads) as usize;
 
@@ -34,7 +38,7 @@ impl Transformer {
         for layer in 0..config.n_layers as usize {
             // attention rmsnorm
             nn::rmsnorm(
-                &mut self.state.xb,
+                &mut state.xb,
                 x,
                 &weights.rms_att_weight[layer * dim..(layer + 1) * dim],
                 EPS,
@@ -43,11 +47,11 @@ impl Transformer {
             // key and value from the kv cache
             let kv_size = config.seq_len as usize * kv_dim;
             let offset = layer * kv_size + pos * kv_dim;
-            let k = &mut self.state.key_cache[offset..(offset + kv_dim)];
-            let v = &mut self.state.value_cache[offset..(offset + kv_dim)];
+            let k = &mut state.key_cache[offset..(offset + kv_dim)];
+            let v = &mut state.value_cache[offset..(offset + kv_dim)];
 
             // qkv for this position
-            let q = &mut self.state.q;
+            let q = &mut state.q;
             let qw_size = dim * dim;
             let kvw_size = dim * kv_dim;
             let wq = &weights.wq[layer * qw_size..(layer + 1) * qw_size];
@@ -60,8 +64,8 @@ impl Transformer {
             // RoPE relative positional encoding: complex-valued rotation q and k in each head
             for i in (0..dim).step_by(2) {
                 // RoPE is applied within each head.
-                let index_within_head = i % head_size;
-                let freq = 1.0 / 10000.0f32.powf(index_within_head as f32 / head_size as f32);
+                let index_within_head = i % head_dim;
+                let freq = 1.0 / 10000.0f32.powf(index_within_head as f32 / head_dim as f32);
                 let val = pos as f32 * freq;
                 let fcr = val.cos();
                 let fci = val.sin();
@@ -78,6 +82,30 @@ impl Transformer {
                     vec[i + 1] = v0 * fci + v1 * fcr;
                 }
             }
+
+            // multihead attention. Iterate over all heads.
+            thread::scope(|s| {
+                let att_heads = state.att.chunks_mut(config.seq_len as usize);
+                for (h, att) in att_heads.enumerate() {
+                    // query for this head
+                    let q = &state.q[h * head_dim..(h + 1) * head_dim];
+                    let key_cache = &state.key_cache[layer * kv_size..(layer + 1) * kv_size];
+                    let kv_h = h / (config.n_heads / config.n_kv_heads) as usize;
+                    s.spawn(move || {
+                        // iterate over all timesteps, including the current one.
+                        for t in 0..=pos {
+                            let k_start = t * kv_dim + kv_h * head_dim;
+                            let k = &key_cache[k_start..k_start + head_dim];
+                            let score = q
+                                .iter()
+                                .zip(k.iter())
+                                .map(|(&q_val, &k_val)| q_val * k_val)
+                                .sum::<f32>();
+                            att[t] = score / (head_dim as f32).sqrt();
+                        }
+                    });
+                }
+            });
         }
         vec![]
     }
