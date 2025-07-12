@@ -57,9 +57,9 @@ impl Transformer {
             let wq = &weights.wq[layer * qw_size..(layer + 1) * qw_size];
             let wk = &weights.wk[layer * kvw_size..(layer + 1) * kvw_size];
             let wv = &weights.wv[layer * kvw_size..(layer + 1) * kvw_size];
-            nn::matmul(q, x, wq, dim, dim);
-            nn::matmul(k, x, wk, kv_dim, dim);
-            nn::matmul(v, x, wv, kv_dim, dim);
+            nn::matmul(q, &state.xb, wq, dim, dim);
+            nn::matmul(k, &state.xb, wk, kv_dim, dim);
+            nn::matmul(v, &state.xb, wv, kv_dim, dim);
 
             // RoPE relative positional encoding: complex-valued rotation q and k in each head
             for i in (0..dim).step_by(2) {
@@ -86,10 +86,14 @@ impl Transformer {
             // multihead attention. Iterate over all heads.
             thread::scope(|s| {
                 let att_heads = state.att.chunks_mut(config.seq_len as usize);
-                for (h, att) in att_heads.enumerate() {
+                let xb_heads = state.xb.chunks_mut(head_dim);
+                for (h, (att, xb)) in att_heads.zip(xb_heads).enumerate() {
                     // query for this head
                     let q = &state.q[h * head_dim..(h + 1) * head_dim];
+                    // key and value cache for this layer
                     let key_cache = &state.key_cache[layer * kv_size..(layer + 1) * kv_size];
+                    let value_cache = &state.value_cache[layer * kv_size..(layer + 1) * kv_size];
+                    // head index in the kv cache
                     let kv_h = h / (config.n_heads / config.n_kv_heads) as usize;
                     s.spawn(move || {
                         // iterate over all timesteps, including the current one.
@@ -106,6 +110,22 @@ impl Transformer {
 
                         // softmax the attention scores, from 0..pos inclusively
                         nn::softmax(&mut att[..=pos]);
+
+                        // weighted sum of the values, store back into xb
+                        xb.fill(0.0);
+
+                        for t in 0..=pos {
+                            // get value vector for this head and this timestep
+                            let v_start = t * kv_dim + kv_h * head_dim;
+                            let v = &value_cache[v_start..v_start + head_dim];
+                            // attention weight for this timestep
+                            let a = att[t];
+
+                            // accumulate the weighted value into xb
+                            for i in 0..head_dim {
+                                xb[i] += a * v[i];
+                            }
+                        }
                     });
                 }
             });
