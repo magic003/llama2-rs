@@ -1,4 +1,4 @@
-use std::sync::{Arc, mpsc};
+use std::cmp;
 use std::thread;
 
 pub fn rmsnorm(dest: &mut [f32], x: &[f32], weight: &[f32], eps: f32) {
@@ -13,26 +13,23 @@ pub fn rmsnorm(dest: &mut [f32], x: &[f32], weight: &[f32], eps: f32) {
 
 pub fn matmul(dest: &mut [f32], x: &[f32], w: &[f32], m: usize, k: usize) {
     // W (m, k) * x (k, ) = dest (m, )
-    let (tx, rx) = mpsc::channel();
     thread::scope(|s| {
-        for i in 0..m {
-            let tx = tx.clone();
-            let w_row = &w[i * k..(i + 1) * k];
+        let rows_per_chunk = cmp::max(m / thread::available_parallelism().unwrap().get(), 1);
+        let chunks = dest.chunks_mut(rows_per_chunk);
+        for (i, chunk) in chunks.enumerate() {
             s.spawn(move || {
-                let mut val = 0.0f32;
-                for j in 0..k {
-                    val += w_row[j] * x[j];
+                for (j, val) in chunk.iter_mut().enumerate() {
+                    let row_start = (i * rows_per_chunk + j) * k;
+                    let w_row = &w[row_start..row_start + k];
+                    *val = w_row
+                        .iter()
+                        .zip(x.iter())
+                        .map(|(&w_val, &x_val)| w_val * x_val)
+                        .sum::<f32>();
                 }
-                tx.send((i, val)).expect("Failed to send value");
             });
         }
     });
-
-    drop(tx);
-
-    for (i, val) in rx {
-        dest[i] = val;
-    }
 }
 
 #[cfg(test)]
