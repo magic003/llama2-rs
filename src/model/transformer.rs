@@ -11,7 +11,9 @@ pub struct Transformer {
 }
 
 struct RunState {
+    x: Vec<f32>,   // activation at the current time stamp. (dim, )
     xb: Vec<f32>,  // activation inside a residual branch. (dim, )
+    xb2: Vec<f32>, // another buffer for convenience. (dim, )
     q: Vec<f32>,   // query (dim, )
     att: Vec<f32>, // attention values. (n_heads, seq_len)
 
@@ -33,7 +35,8 @@ impl Transformer {
         let kv_dim = ((config.dim / config.n_heads) * config.n_kv_heads) as usize;
 
         let token = token as usize;
-        let x = weights.token_embedding_table[token * dim..(token + 1) * dim].as_ref();
+        let x = &mut state.x;
+        x.copy_from_slice(weights.token_embedding_table[token * dim..(token + 1) * dim].as_ref());
 
         for layer in 0..config.n_layers as usize {
             // attention rmsnorm
@@ -129,6 +132,15 @@ impl Transformer {
                     });
                 }
             });
+
+            // final matmul to get the output of the attention layer
+            let wo = &weights.wo[layer * dim * dim..(layer + 1) * dim * dim];
+            nn::matmul(&mut state.xb2, &state.xb, wo, dim, dim);
+
+            // residual connection back into x
+            for i in 0..dim {
+                x[i] += state.xb2[i];
+            }
         }
         vec![]
     }
