@@ -13,21 +13,20 @@ pub fn rmsnorm(dest: &mut [f32], x: &[f32], weight: &[f32], eps: f32) {
 
 pub fn matmul(dest: &mut [f32], x: &[f32], w: &[f32], m: usize, k: usize) {
     // W (m, k) * x (k, ) = dest (m, )
-    let x = Arc::new(x.to_vec());
-
     let (tx, rx) = mpsc::channel();
-    for i in 0..m {
-        let tx = tx.clone();
-        let w_row = w[i * k..(i + 1) * k].to_vec();
-        let x = Arc::clone(&x);
-        thread::spawn(move || {
-            let mut val = 0.0f32;
-            for j in 0..k {
-                val += w_row[j] * x[j];
-            }
-            tx.send((i, val)).expect("Failed to send value");
-        });
-    }
+    thread::scope(|s| {
+        for i in 0..m {
+            let tx = tx.clone();
+            let w_row = &w[i * k..(i + 1) * k];
+            s.spawn(move || {
+                let mut val = 0.0f32;
+                for j in 0..k {
+                    val += w_row[j] * x[j];
+                }
+                tx.send((i, val)).expect("Failed to send value");
+            });
+        }
+    });
 
     drop(tx);
 
