@@ -1,14 +1,12 @@
 pub struct Sampler {
-    vocab_size: u32,
     temperature: f32,
     top_p: Option<f32>,
     rng_seed: u64,
 }
 
 impl Sampler {
-    pub fn new(vocab_size: u32, temperature: f32, top_p: Option<f32>, rng_seed: u64) -> Self {
+    pub fn new(temperature: f32, top_p: Option<f32>, rng_seed: u64) -> Self {
         Sampler {
-            vocab_size,
             temperature,
             top_p,
             rng_seed,
@@ -49,8 +47,7 @@ mod tests {
 
     #[test]
     fn test_sampler_new() {
-        let sampler = Sampler::new(512, 1.0, Some(0.9), 42);
-        assert_eq!(512, sampler.vocab_size);
+        let sampler = Sampler::new(1.0, Some(0.9), 42);
         assert_eq!(1.0, sampler.temperature);
         assert_eq!(Some(0.9), sampler.top_p);
         assert_eq!(42, sampler.rng_seed);
@@ -69,7 +66,7 @@ mod tests {
 
     #[test]
     fn test_sample_zero_temperature() {
-        let sampler = Sampler::new(5, 0.0, None, 42);
+        let sampler = Sampler::new(0.0, None, 42);
         let logits = vec![0.1, 0.1, 0.4, 0.3, 0.1];
         let token = sampler.sample(&logits);
         assert_eq!(2, token);
