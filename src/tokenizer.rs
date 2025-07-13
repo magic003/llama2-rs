@@ -12,8 +12,8 @@ pub struct Tokenizer {
     stoi: HashMap<Rc<String>, u32>,
 }
 
-const BOS_TOKEN: u32 = 1;
-const EOS_TOKEN: u32 = 2;
+pub const BOS_TOKEN: u32 = 1;
+pub const EOS_TOKEN: u32 = 2;
 
 // The ASCII characters saved as an array of strings.
 static BYTE_PIECES: [&'static str; 128] = [
@@ -75,7 +75,6 @@ impl Tokenizer {
         }
         // some tokens designate raw bytes, e.g. "<0x01>"
         // extract the hex value and get the corresponding byte
-        println!("token: {}, piece: {}", token, piece);
         if piece.len() == 6 && piece.starts_with("<0x") && piece.ends_with('>') {
             let hex_str = &piece[3..piece.len() - 1];
             if let Ok(byte) = u8::from_str_radix(hex_str, 16) {
