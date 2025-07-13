@@ -1,3 +1,5 @@
+use crate::nn;
+
 pub struct Sampler {
     temperature: f32,
     top_p: Option<f32>,
@@ -13,11 +15,18 @@ impl Sampler {
         }
     }
 
-    pub fn sample(&self, logits: &[f32]) -> u32 {
+    pub fn sample(&self, logits: &mut [f32]) -> u32 {
         if self.temperature == 0.0 {
             // take the token with the highest probability
             return Self::argmax(logits) as u32;
         }
+
+        // apply temperature to logits
+        logits.iter_mut().for_each(|logit| {
+            *logit /= self.temperature;
+        });
+        // apply softmax to get the probabilities
+        nn::softmax(logits);
 
         return 0;
     }
@@ -67,8 +76,20 @@ mod tests {
     #[test]
     fn test_sample_zero_temperature() {
         let sampler = Sampler::new(0.0, None, 42);
-        let logits = vec![0.1, 0.1, 0.4, 0.3, 0.1];
-        let token = sampler.sample(&logits);
+        let mut logits = vec![0.1, 0.1, 0.4, 0.3, 0.1];
+        let token = sampler.sample(&mut logits);
         assert_eq!(2, token);
+    }
+
+    #[test]
+    fn test_sample_apply_temperature() {
+        let mut logits = vec![2.0, 4.0, 6.0, 8.0, 10.0];
+        Sampler::new(2.0, None, 42).sample(&mut logits);
+
+        assert!((logits[0] - 0.01165623096).abs() < 1e-6);
+        assert!((logits[1] - 0.0316849208).abs() < 1e-6);
+        assert!((logits[2] - 0.08612854441).abs() < 1e-6);
+        assert!((logits[3] - 0.2341216573).abs() < 1e-6);
+        assert!((logits[4] - 0.6364086465).abs() < 1e-6);
     }
 }
