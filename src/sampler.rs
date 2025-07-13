@@ -30,8 +30,26 @@ impl Sampler {
         });
         // apply softmax to get the probabilities
         nn::softmax(self.logits.as_mut_slice());
+        // flip a (float) coin (this is our source of entropy for sampling)
+        let coin = self.random_f32();
+        return if self.top_p.is_none() {
+            Self::sample_mult(&self.logits, coin) as u32
+        } else {
+            0
+        };
+    }
 
-        return 0;
+    fn random_f32(&mut self) -> f32 {
+        // copied from llama2.c
+        // xorshift rng: https://en.wikipedia.org/wiki/Xorshift#xorshift.2A
+        let state = &mut self.rng_state;
+        *state ^= *state >> 12;
+        *state ^= *state << 25;
+        *state ^= *state >> 27;
+        let val = state.wrapping_mul(0x2545F4914F6CDD1D) >> 32;
+
+        // random f32 in [0,1)
+        (val >> 8) as f32 / 16777216.0
     }
 
     /// Returns the index that has the highest probability.
@@ -50,6 +68,18 @@ impl Sampler {
         }
 
         max_index
+    }
+
+    fn sample_mult(probabilities: &[f32], coin: f32) -> usize {
+        // sample from the probabilities using the coin flip
+        let mut cumulative = 0.0;
+        for (i, &p) in probabilities.iter().enumerate() {
+            cumulative += p;
+            if cumulative >= coin {
+                return i;
+            }
+        }
+        probabilities.len() - 1 // fallback to last index if no match found
     }
 }
 
@@ -78,6 +108,27 @@ mod tests {
     }
 
     #[test]
+    fn test_sample_mult() {
+        let probabilities = vec![0.1, 0.2, 0.3, 0.4];
+
+        // should fall into the first bucket
+        let index = Sampler::sample_mult(&probabilities, 0.05);
+        assert_eq!(0, index);
+
+        // should fall into the second bucket
+        let index = Sampler::sample_mult(&probabilities, 0.25);
+        assert_eq!(1, index);
+
+        // should fall into the third bucket
+        let index = Sampler::sample_mult(&probabilities, 0.6);
+        assert_eq!(2, index);
+
+        // should fall into the fourth bucket
+        let index = Sampler::sample_mult(&probabilities, 0.75);
+        assert_eq!(3, index);
+    }
+
+    #[test]
     fn test_sample_zero_temperature() {
         let mut sampler = Sampler::new(16, 0.0, None, 42);
         let logits = vec![0.1, 0.1, 0.4, 0.3, 0.1];
@@ -96,5 +147,26 @@ mod tests {
         assert!((sampler.logits[2] - 0.08612854441).abs() < 1e-6);
         assert!((sampler.logits[3] - 0.2341216573).abs() < 1e-6);
         assert!((sampler.logits[4] - 0.6364086465).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_sample_with_sample_mult() {
+        let logits = vec![2.0, 4.0, 6.0, 8.0, 10.0];
+        let mut sampler = Sampler::new(5, 2.0, None, 12345);
+
+        // based on the values in test_sample_apply_temperature and test_random_f32, it falls into the last bucket
+        let token = sampler.sample(&logits);
+        assert_eq!(4, token);
+    }
+
+    #[test]
+    fn test_random_f32() {
+        let mut sampler = Sampler::new(16, 1.0, None, 12345);
+        assert!((sampler.random_f32() - 0.595092).abs() < 1e-6);
+        assert!((sampler.random_f32() - 0.753154).abs() < 1e-6);
+        assert!((sampler.random_f32() - 0.076566).abs() < 1e-6);
+        assert!((sampler.random_f32() - 0.736076).abs() < 1e-6);
+        assert!((sampler.random_f32() - 0.119520).abs() < 1e-6);
+        assert!((sampler.random_f32() - 0.210562).abs() < 1e-6);
     }
 }
