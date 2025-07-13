@@ -52,7 +52,9 @@ impl Generator {
             }
 
             let piece = self.tokenizer.decode(token, next);
-            output.extend(piece.chars());
+            if !Self::is_bad_piece(piece) {
+                output.extend(piece.chars());
+            }
 
             token = next;
         }
@@ -65,5 +67,13 @@ impl Generator {
         }
 
         output
+    }
+
+    fn is_bad_piece(piece: &str) -> bool {
+        if piece.len() == 1 {
+            let ch = piece.chars().nth(0).unwrap();
+            return !(ch.is_ascii_graphic() || ch.is_ascii_whitespace());
+        }
+        false
     }
 }
