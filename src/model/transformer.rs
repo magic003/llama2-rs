@@ -11,13 +11,14 @@ pub struct Transformer {
 }
 
 struct RunState {
-    x: Vec<f32>,   // activation at the current time stamp. (dim, )
-    xb: Vec<f32>,  // activation inside a residual branch. (dim, )
-    xb2: Vec<f32>, // another buffer for convenience. (dim, )
-    hb: Vec<f32>,  // buffer for hidden dimension in the ffn. (hidden_dim, )
-    hb2: Vec<f32>, // buffer for hidden dimension in the ffn. (hidden_dim, )
-    q: Vec<f32>,   // query (dim, )
-    att: Vec<f32>, // attention values. (n_heads, seq_len)
+    x: Vec<f32>,      // activation at the current time stamp. (dim, )
+    xb: Vec<f32>,     // activation inside a residual branch. (dim, )
+    xb2: Vec<f32>,    // another buffer for convenience. (dim, )
+    hb: Vec<f32>,     // buffer for hidden dimension in the ffn. (hidden_dim, )
+    hb2: Vec<f32>,    // buffer for hidden dimension in the ffn. (hidden_dim, )
+    q: Vec<f32>,      // query (dim, )
+    att: Vec<f32>,    // attention values. (n_heads, seq_len)
+    logits: Vec<f32>, // output logits
 
     // kv cache
     key_cache: Vec<f32>,   // (layer, seq_len, kv_dim)
@@ -27,7 +28,7 @@ struct RunState {
 const EPS: f32 = 1e-5;
 
 impl Transformer {
-    pub fn forward(&mut self, token: u32, pos: usize) -> Vec<f32> {
+    pub fn forward(&mut self, token: u32, pos: usize) -> &[f32] {
         // a few convenience variables
         let config = &self.config;
         let state = &mut self.state;
@@ -177,6 +178,18 @@ impl Transformer {
                 x[i] += state.xb[i];
             }
         }
-        vec![]
+        // final rmsnorm
+        // in llama2.c, it writes into x, but Rust doesn't allow it. It writes into xb instead.
+        nn::rmsnorm(&mut state.xb, &x, &weights.rms_final_weight, EPS);
+
+        // classifier into logits
+        nn::matmul(
+            &mut state.logits,
+            &state.xb,
+            &weights.wcls,
+            config.vocab_size as usize,
+            dim,
+        );
+        &state.logits
     }
 }
