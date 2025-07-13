@@ -33,13 +33,16 @@ pub fn matmul(dest: &mut [f32], x: &[f32], w: &[f32], m: usize, k: usize) {
 }
 
 pub fn softmax(logits: &mut [f32]) {
+    if logits.is_empty() {
+        return;
+    }
     // find max value (for numerical stability)
-    let max = logits
-        .iter()
-        .cloned()
-        .reduce(f32::max)
-        .expect("logits must not be empty");
-    println!("max: {}", max);
+    let mut max = logits[0];
+    for logit in &logits[1..] {
+        if *logit > max {
+            max = *logit;
+        }
+    }
     let sum: f32 = logits
         .iter_mut()
         .map(|logit| {
@@ -47,8 +50,6 @@ pub fn softmax(logits: &mut [f32]) {
             *logit
         })
         .sum();
-    println!("sum: {}", sum);
-    println!("logits: {:?}", logits);
 
     for logit in logits.iter_mut() {
         *logit /= sum;
