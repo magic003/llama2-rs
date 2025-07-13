@@ -121,9 +121,9 @@ impl Transformer {
                     } else {
                         &mut k[i..i + 2]
                     };
-                    let (v0, v1) = (vec[i], vec[i + 1]);
-                    vec[i] = v0 * fcr - v1 * fci;
-                    vec[i + 1] = v0 * fci + v1 * fcr;
+                    let (v0, v1) = (vec[0], vec[1]);
+                    vec[0] = v0 * fcr - v1 * fci;
+                    vec[1] = v0 * fci + v1 * fcr;
                 }
             }
 

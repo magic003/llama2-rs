@@ -60,7 +60,7 @@ impl Generator {
         if self.report_stats {
             eprintln!(
                 "acheived tok/s {}\n",
-                token_count as f64 / start_time.elapsed().as_millis() as f64
+                token_count as f64 / start_time.elapsed().as_millis() as f64 * 1000.0
             );
         }
 

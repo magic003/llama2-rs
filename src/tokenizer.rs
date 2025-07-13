@@ -78,8 +78,7 @@ impl Tokenizer {
         if piece.len() == 6 && piece.starts_with("<0x") && piece.ends_with('>') {
             let hex_str = &piece[3..piece.len() - 1];
             if let Ok(byte) = u8::from_str_radix(hex_str, 16) {
-                // add 3 because the first 3 tokens are <unk>, <s>, and </s>
-                piece = BYTE_PIECES[byte as usize + 3];
+                piece = BYTE_PIECES[byte as usize];
             }
         }
         piece

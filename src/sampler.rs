@@ -84,7 +84,6 @@ impl Sampler {
     }
 
     fn sample_top_p(probabilities: &[f32], top_p: f32, coin: f32) -> usize {
-        println!("Probabilities: {:?}", probabilities);
         // pre-filter the extremely low probability tokens
         let cutoff = (1.0 - top_p) / (probabilities.len() - 1) as f32;
         let mut probs: Vec<(usize, &f32)> = probabilities
@@ -108,10 +107,6 @@ impl Sampler {
 
         // sample from the truncated list
         let r = coin * cumulative;
-        print!(
-            "Sampling with top_p: {}, coin: {}, cumulative: {}\n",
-            top_p, r, cumulative
-        );
         cumulative = 0.0;
         for (index, p) in probs {
             cumulative += *p;
