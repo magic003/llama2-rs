@@ -1,11 +1,13 @@
-use std::thread;
+use std::fs::File;
+use std::io::BufReader;
+use std::{io, thread};
 
 use crate::model::config::Config;
 use crate::model::weights::TransformerWeights;
 use crate::nn;
 
 pub struct Transformer {
-    config: Config,
+    pub config: Config,
     weights: TransformerWeights,
     state: RunState,
 }
@@ -18,16 +20,51 @@ struct RunState {
     hb2: Vec<f32>,    // buffer for hidden dimension in the ffn. (hidden_dim, )
     q: Vec<f32>,      // query (dim, )
     att: Vec<f32>,    // attention values. (n_heads, seq_len)
-    logits: Vec<f32>, // output logits
+    logits: Vec<f32>, // output logits. (vocab_size, )
 
     // kv cache
     key_cache: Vec<f32>,   // (layer, seq_len, kv_dim)
     value_cache: Vec<f32>, // (layer, seq_len, kv_dim)
 }
 
+impl RunState {
+    pub fn new(config: &Config) -> RunState {
+        let dim = config.dim as usize;
+        let kv_dim = ((config.dim / config.n_heads) * config.n_kv_heads) as usize;
+        let hidden_dim = config.hidden_dim as usize;
+
+        RunState {
+            x: vec![0.0; dim],
+            xb: vec![0.0; dim],
+            xb2: vec![0.0; dim],
+            hb: vec![0.0; hidden_dim],
+            hb2: vec![0.0; hidden_dim],
+            q: vec![0.0; dim],
+            att: vec![0.0; config.n_heads as usize * config.seq_len as usize],
+            logits: vec![0.0; config.vocab_size as usize],
+
+            key_cache: vec![0.0; config.n_layers as usize * config.seq_len as usize * kv_dim],
+            value_cache: vec![0.0; config.n_layers as usize * config.seq_len as usize * kv_dim],
+        }
+    }
+}
+
 const EPS: f32 = 1e-5;
 
 impl Transformer {
+    pub fn from_file(checkpoint_path: &str) -> io::Result<Transformer> {
+        let file = File::open(checkpoint_path)?;
+        let mut reader = BufReader::new(file);
+        let config = Config::from_reader(&mut reader)?;
+        let weights = TransformerWeights::from_reader(&mut reader, &config)?;
+        let state = RunState::new(&config);
+        Ok(Transformer {
+            config,
+            weights,
+            state,
+        })
+    }
+
     pub fn forward(&mut self, token: u32, pos: usize) -> &[f32] {
         // a few convenience variables
         let config = &self.config;
@@ -191,5 +228,37 @@ impl Transformer {
             dim,
         );
         &state.logits
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_run_state_new() {
+        let config = Config {
+            dim: 64,
+            hidden_dim: 172,
+            n_layers: 5,
+            n_heads: 8,
+            n_kv_heads: 4,
+            vocab_size: 512,
+            seq_len: 512,
+            shared_weights: true,
+        };
+        let state = RunState::new(&config);
+        assert_eq!(64, state.x.len());
+        assert_eq!(64, state.xb.len());
+        assert_eq!(64, state.xb2.len());
+        assert_eq!(172, state.hb.len());
+        assert_eq!(172, state.hb2.len());
+        assert_eq!(64, state.q.len());
+        assert_eq!(8 * 512, state.att.len());
+        assert_eq!(512, state.logits.len());
+
+        // 5 layers, 512 seq_len, 32 kv_dim
+        assert_eq!(5 * 512 * 32, state.key_cache.len());
+        assert_eq!(5 * 512 * 32, state.value_cache.len());
     }
 }
