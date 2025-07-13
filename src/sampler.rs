@@ -1,4 +1,5 @@
 use crate::nn;
+use std::cmp::Ordering;
 
 pub struct Sampler {
     temperature: f32,
@@ -32,10 +33,10 @@ impl Sampler {
         nn::softmax(self.logits.as_mut_slice());
         // flip a (float) coin (this is our source of entropy for sampling)
         let coin = self.random_f32();
-        return if self.top_p.is_none() {
-            Self::sample_mult(&self.logits, coin) as u32
+        return if let Some(top_p) = self.top_p {
+            Self::sample_top_p(&self.logits, top_p, coin) as u32
         } else {
-            0
+            Self::sample_mult(&self.logits, coin) as u32
         };
     }
 
@@ -80,6 +81,46 @@ impl Sampler {
             }
         }
         probabilities.len() - 1 // fallback to last index if no match found
+    }
+
+    fn sample_top_p(probabilities: &[f32], top_p: f32, coin: f32) -> usize {
+        println!("Probabilities: {:?}", probabilities);
+        // pre-filter the extremely low probability tokens
+        let cutoff = (1.0 - top_p) / (probabilities.len() - 1) as f32;
+        let mut probs: Vec<(usize, &f32)> = probabilities
+            .iter()
+            .enumerate()
+            .filter(|&(_, &p)| p >= cutoff)
+            .collect();
+        probs.sort_by(|a, b| b.1.partial_cmp(a.1).unwrap_or(Ordering::Equal));
+
+        // truncate the list where the cumulative probability exceeds top_p
+        let mut cumulative = 0.0;
+        let mut last_index = probs.len() - 1;
+        for (i, (_, p)) in probs.iter().enumerate() {
+            cumulative += *p;
+            if cumulative > top_p {
+                last_index = i;
+                break;
+            }
+        }
+        let probs = &probs[..=last_index];
+
+        // sample from the truncated list
+        let r = coin * cumulative;
+        print!(
+            "Sampling with top_p: {}, coin: {}, cumulative: {}\n",
+            top_p, r, cumulative
+        );
+        cumulative = 0.0;
+        for (index, p) in probs {
+            cumulative += *p;
+            if cumulative >= r {
+                return *index;
+            }
+        }
+
+        return probs.last().unwrap().0; // fallback to last index if no match found
     }
 }
 
@@ -129,6 +170,28 @@ mod tests {
     }
 
     #[test]
+    fn test_sample_top_p() {
+        let probabilities = vec![
+            0.07, 0.03, 0.17, 0.13, 0.14, 0.16, 0.155, 0.1, 0.01, 0.015, 0.02,
+        ];
+        let top_p = 0.8;
+        // The final probs are: [0.17, 0.16, 0.155, 0.14, 0.13, 0.1]
+        // final cumulative is: 0.855
+
+        // should pick the token with prob 0.17
+        let index = Sampler::sample_top_p(&probabilities, top_p, 0.15);
+        assert_eq!(2, index);
+
+        // should pick the token with prob 0.16
+        let index = Sampler::sample_top_p(&probabilities, top_p, 0.25);
+        assert_eq!(5, index);
+
+        // should pick the token with prob 0.1
+        let index = Sampler::sample_top_p(&probabilities, top_p, 0.9);
+        assert_eq!(7, index);
+    }
+
+    #[test]
     fn test_sample_zero_temperature() {
         let mut sampler = Sampler::new(16, 0.0, None, 42);
         let logits = vec![0.1, 0.1, 0.4, 0.3, 0.1];
@@ -155,6 +218,16 @@ mod tests {
         let mut sampler = Sampler::new(5, 2.0, None, 12345);
 
         // based on the values in test_sample_apply_temperature and test_random_f32, it falls into the last bucket
+        let token = sampler.sample(&logits);
+        assert_eq!(4, token);
+    }
+
+    #[test]
+    fn test_sample_with_sample_top_p() {
+        let logits = vec![2.0, 4.0, 6.0, 8.0, 10.0];
+        let mut sampler = Sampler::new(5, 2.0, Some(0.8), 12345);
+
+        // based on the values in test_sample_apply_temperature and test_random_f32, it picks 10.0
         let token = sampler.sample(&logits);
         assert_eq!(4, token);
     }
