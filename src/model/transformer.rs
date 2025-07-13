@@ -14,6 +14,8 @@ struct RunState {
     x: Vec<f32>,   // activation at the current time stamp. (dim, )
     xb: Vec<f32>,  // activation inside a residual branch. (dim, )
     xb2: Vec<f32>, // another buffer for convenience. (dim, )
+    hb: Vec<f32>,  // buffer for hidden dimension in the ffn. (hidden_dim, )
+    hb2: Vec<f32>, // buffer for hidden dimension in the ffn. (hidden_dim, )
     q: Vec<f32>,   // query (dim, )
     att: Vec<f32>, // attention values. (n_heads, seq_len)
 
@@ -33,6 +35,7 @@ impl Transformer {
         let head_dim = dim / config.n_heads as usize;
         let weights = &self.weights;
         let kv_dim = ((config.dim / config.n_heads) * config.n_kv_heads) as usize;
+        let hidden_dim = config.hidden_dim as usize;
 
         let token = token as usize;
         let x = &mut state.x;
@@ -140,6 +143,38 @@ impl Transformer {
             // residual connection back into x
             for i in 0..dim {
                 x[i] += state.xb2[i];
+            }
+
+            // ffn rmsnorm
+            nn::rmsnorm(
+                &mut state.xb,
+                x,
+                &weights.rms_ffn_weight[layer * dim..(layer + 1) * dim],
+                EPS,
+            );
+
+            // SwiGLU non-linearity
+            // SwiGLU(x) = silu(w1 @ x) * (w3 @ x)
+            let hidden_size_per_layer = dim * config.hidden_dim as usize;
+            let w1 =
+                &weights.w1[layer * hidden_size_per_layer..(layer + 1) * hidden_size_per_layer];
+            let w3 =
+                &weights.w3[layer * hidden_size_per_layer..(layer + 1) * hidden_size_per_layer];
+            nn::matmul(&mut state.hb, &state.xb, w1, hidden_dim, dim);
+            nn::matmul(&mut state.hb2, &state.xb, w3, hidden_dim, dim);
+            for (hb_val, hb2_val) in state.hb.iter_mut().zip(state.hb2.iter()) {
+                let silu = *hb_val * 1.0 / (1.0 + (-*hb_val).exp());
+                *hb_val = silu * hb2_val;
+            }
+
+            // final matmul to get the output of the ffn layer
+            let w2 =
+                &weights.w2[layer * hidden_size_per_layer..(layer + 1) * hidden_size_per_layer];
+            nn::matmul(&mut state.xb, &state.hb, &w2, dim, hidden_dim);
+
+            // residual connection back into x
+            for i in 0..dim {
+                x[i] += state.xb[i];
             }
         }
         vec![]
