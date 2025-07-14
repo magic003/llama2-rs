@@ -33,7 +33,7 @@ impl Generator {
 
         let mut token_count = 0u32;
         let mut token = prompt_tokens[0];
-        let start_time = Instant::now();
+        let mut start_time = Option::None;
         for pos in 0..steps as usize {
             let logits = self.transformer.forward(token, pos);
 
@@ -57,13 +57,20 @@ impl Generator {
             }
 
             token = next;
+
+            // init the timer here because the first iteration can be slower
+            if pos == 0 {
+                start_time = Some(Instant::now());
+            }
         }
 
         if self.report_stats {
-            eprintln!(
-                "acheived tok/s {}\n",
-                token_count as f64 / start_time.elapsed().as_millis() as f64 * 1000.0
-            );
+            if let Some(start_time) = start_time {
+                eprintln!(
+                    "acheived tok/s {}\n",
+                    token_count as f64 / start_time.elapsed().as_millis() as f64 * 1000.0
+                );
+            }
         }
 
         output
