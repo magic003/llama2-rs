@@ -3,6 +3,8 @@ use std::mem;
 use std::rc::Rc;
 
 use crate::model::config::Config;
+
+/// Weights for the Transformer model.
 pub struct TransformerWeights {
     pub token_embedding_table: Rc<Vec<f32>>, // (vocab_size, dim)
     // weights for rmsnorms
@@ -24,6 +26,7 @@ pub struct TransformerWeights {
 }
 
 impl TransformerWeights {
+    /// Reads the transformer weights from a reader.
     pub fn from_reader(
         reader: &mut dyn BufRead,
         config: &Config,

@@ -1,3 +1,7 @@
+//! # llama2-rs
+//!
+//! Inference for Llama-2 Transformer model.
+
 mod generator;
 mod model;
 mod nn;

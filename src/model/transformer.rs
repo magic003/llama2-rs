@@ -6,12 +6,14 @@ use crate::model::config::Config;
 use crate::model::weights::TransformerWeights;
 use crate::nn;
 
+/// Transformer model for Llama-2.
 pub struct Transformer {
     pub config: Config,
     weights: TransformerWeights,
     state: RunState,
 }
 
+/// State of the Transformer model during inference.
 struct RunState {
     x: Vec<f32>,      // activation at the current time stamp. (dim, )
     xb: Vec<f32>,     // activation inside a residual branch. (dim, )
@@ -28,6 +30,7 @@ struct RunState {
 }
 
 impl RunState {
+    /// Creates a new `RunState` instance based on the provided configuration.
     pub fn new(config: &Config) -> RunState {
         let dim = config.dim as usize;
         let kv_dim = ((config.dim / config.n_heads) * config.n_kv_heads) as usize;
@@ -52,6 +55,8 @@ impl RunState {
 const EPS: f32 = 1e-5;
 
 impl Transformer {
+    /// Creates a new `Transformer` instance by reading the configuration and weights from the model's
+    /// checkpoint file.
     pub fn from_file(checkpoint_path: &str) -> io::Result<Transformer> {
         let file = File::open(checkpoint_path)?;
         let mut reader = BufReader::new(file);
@@ -65,6 +70,7 @@ impl Transformer {
         })
     }
 
+    /// Runs the Transformer model forward pass with the given token and position.
     pub fn forward(&mut self, token: u32, pos: usize) -> &[f32] {
         // a few convenience variables
         let config = &self.config;

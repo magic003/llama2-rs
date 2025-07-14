@@ -1,6 +1,8 @@
+//! This module provides the utility functions used in neural networks.
 use std::cmp;
 use std::thread;
 
+/// Computes the RMS normalization of the input vector `x` and stores the result in `dest`.
 pub fn rmsnorm(dest: &mut [f32], x: &[f32], weight: &[f32], eps: f32) {
     let sum_of_squares: f32 = x.iter().map(|&v| v * v).sum();
     let rms = (sum_of_squares / x.len() as f32 + eps).sqrt();
@@ -11,6 +13,8 @@ pub fn rmsnorm(dest: &mut [f32], x: &[f32], weight: &[f32], eps: f32) {
     }
 }
 
+/// Performs matrix multiplication of `w` (m * k) and `x` (k) and stores the result in `dest` (m). It uses
+/// multi-threading to parallelize the computation.
 pub fn matmul(dest: &mut [f32], x: &[f32], w: &[f32], m: usize, k: usize) {
     // W (m, k) * x (k, ) = dest (m, )
     thread::scope(|s| {
@@ -32,6 +36,7 @@ pub fn matmul(dest: &mut [f32], x: &[f32], w: &[f32], m: usize, k: usize) {
     });
 }
 
+/// Applies the softmax function to the logits in place, normalizing them to a probability distribution.
 pub fn softmax(logits: &mut [f32]) {
     if logits.is_empty() {
         return;

@@ -5,6 +5,7 @@ use crate::Tokenizer;
 use crate::Transformer;
 use crate::tokenizer;
 
+/// A generator for Llama-2 Transformer model inference.
 pub struct Generator {
     tokenizer: Tokenizer,
     transformer: Transformer,
@@ -13,6 +14,7 @@ pub struct Generator {
 }
 
 impl Generator {
+    /// Creates a new `Generator` instance.
     pub fn new(
         tokenizer: Tokenizer,
         transformer: Transformer,
@@ -27,6 +29,7 @@ impl Generator {
         }
     }
 
+    /// Generates text based on the provided prompt and number of steps.
     pub fn generate(&mut self, prompt: &str, steps: u32) -> String {
         let mut output = String::new();
         let prompt_tokens = self.tokenizer.encode(prompt, true, false);
@@ -76,6 +79,7 @@ impl Generator {
         output
     }
 
+    /// Checks if a piece of text is considered "bad" if it's not printable.
     fn is_bad_piece(piece: &str) -> bool {
         if piece.len() == 1 {
             let ch = piece.chars().nth(0).unwrap();

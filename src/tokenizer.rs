@@ -12,7 +12,9 @@ pub struct Tokenizer {
     stoi: HashMap<Rc<String>, u32>,
 }
 
+/// The bos token.
 pub const BOS_TOKEN: u32 = 1;
+/// The eos token.
 pub const EOS_TOKEN: u32 = 2;
 
 // The ASCII characters saved as an array of strings.
@@ -31,6 +33,7 @@ static BYTE_PIECES: [&'static str; 128] = [
 ];
 
 impl Tokenizer {
+    /// Creates a new `Tokenizer` instance by reading from the tokenizer bin file.
     pub fn new(tokenizer_path: &str, vocab_size: u32) -> io::Result<Self> {
         let file = File::open(tokenizer_path)?;
         let mut reader = BufReader::new(file);
@@ -66,6 +69,7 @@ impl Tokenizer {
         })
     }
 
+    /// Decodes a token into a text piece.
     pub fn decode(&self, prev_token: u32, token: u32) -> &str {
         let mut piece: &str = self.vocab_tokens.get(token as usize).unwrap();
         // from llama2.c:
@@ -84,6 +88,7 @@ impl Tokenizer {
         piece
     }
 
+    /// Encodes a text into a sequence of tokens.
     pub fn encode(&self, text: &str, bos: bool, eos: bool) -> Vec<u32> {
         let mut tokens = Vec::new();
 

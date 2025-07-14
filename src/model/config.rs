@@ -1,6 +1,7 @@
 use std::io::{self, BufRead};
 use std::mem;
 
+/// Configuration for the Transformer model.
 pub struct Config {
     pub dim: u32,             // transformer dimension
     pub hidden_dim: u32,      // for ffn layers
@@ -13,6 +14,7 @@ pub struct Config {
 }
 
 impl Config {
+    /// Creates a new `Config` instance by reading settings from a reader.
     pub fn from_reader(reader: &mut dyn BufRead) -> io::Result<Config> {
         let mut buf = [0; mem::size_of::<u32>()];
 

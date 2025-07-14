@@ -1,6 +1,7 @@
 use crate::nn;
 use std::cmp::Ordering;
 
+/// Sampler for sampling tokens from logits.
 pub struct Sampler {
     temperature: f32,
     top_p: Option<f32>,
@@ -9,6 +10,7 @@ pub struct Sampler {
 }
 
 impl Sampler {
+    /// Creates a new Sampler.
     pub fn new(vocab_size: u32, temperature: f32, top_p: Option<f32>, rng_seed: u64) -> Self {
         Sampler {
             temperature,
@@ -18,6 +20,7 @@ impl Sampler {
         }
     }
 
+    /// Samples a token from the logits. It uses different sampling methods based on the settings.
     pub fn sample(&mut self, logits: &[f32]) -> u32 {
         if self.temperature == 0.0 {
             // take the token with the highest probability
@@ -71,6 +74,7 @@ impl Sampler {
         max_index
     }
 
+    /// Samples a token based on the accumulative probabilities using a coin flip.
     fn sample_mult(probabilities: &[f32], coin: f32) -> usize {
         // sample from the probabilities using the coin flip
         let mut cumulative = 0.0;
@@ -83,6 +87,7 @@ impl Sampler {
         probabilities.len() - 1 // fallback to last index if no match found
     }
 
+    /// Samples a token based on the top-p (nucleus) sampling method.
     fn sample_top_p(probabilities: &[f32], top_p: f32, coin: f32) -> usize {
         // pre-filter the extremely low probability tokens
         let cutoff = (1.0 - top_p) / (probabilities.len() - 1) as f32;
