@@ -208,7 +208,7 @@ mod tests {
         assert_eq!("en", decoded);
 
         // test decoding of a token that designates a raw byte
-        let decoded = tokenizer.decode(1, 65);
+        let decoded = tokenizer.decode(1, 68);
         assert_eq!("A", decoded);
     }
 
