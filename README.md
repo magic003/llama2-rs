@@ -22,7 +22,7 @@ It runs with the TinyStories [models](https://huggingface.co/karpathy/tinyllamas
 
 Running with the stories260K model:
 ```bash
-./target/release/llama2-rs stories260K/stories260K.bin -z stories260K/tok512.bin -t 0.9 -s 12345 
+./target/release/run stories260K/stories260K.bin -z stories260K/tok512.bin -t 0.9 -s 12345 
 ```
 
 It gives:
@@ -38,7 +38,7 @@ With the same seed, it generates identical text as llama2.c.
 
 You can download other TinyStories [models](https://huggingface.co/karpathy/tinyllamas), run:
 ```bash
-./target/release/llama2-rs ~/Downloads/stories110M.bin
+./target/release/run ~/Downloads/stories110M.bin
 ```
 
 ## Performance
@@ -56,10 +56,12 @@ This repo is the multi-thread version of llama2-rs. I also used a single thread 
 | [stories42M.bin](https://huggingface.co/karpathy/tinyllamas/resolve/main/stories42M.bin) | 35 tok/s | 36 tok/s | 89 tok/s |
 | [stories110M.bin](https://huggingface.co/karpathy/tinyllamas/resolve/main/stories110M.bin) | 12 tok/s | 12 tok/s | 38 tok/s |
 
+## Quantization
+
+
 ## Unsorted TODOs
 
 * Chat
-* Quantization
 
 ## License
 
