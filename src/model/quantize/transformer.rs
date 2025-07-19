@@ -132,7 +132,7 @@ impl super::super::Transformer for Transformer {
             );
 
             // qkv matmuls for this position
-            state.xq.quantize(x);
+            state.xq.quantize(&state.xb);
 
             let wq = &weights.wq[layer];
             let wk = &weights.wk[layer];
