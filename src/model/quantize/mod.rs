@@ -1,3 +1,5 @@
+use std::{cmp, thread};
+
 mod config;
 mod weights;
 
@@ -51,6 +53,38 @@ impl QuantizedTensor {
     const Q_MAX: f32 = 127.0;
 }
 
+/// Performs matrix multiplication of `w` (m * k) and `x` (k) and stores the result in `dest` (m). It uses
+/// multi-threading to parallelize the computation.
+fn matmul(dest: &mut [f32], x: &QuantizedTensor, w: &QuantizedTensor, m: usize, k: usize) {
+    // W (m, k) * x (k, ) = dest (m, )
+    thread::scope(|s| {
+        let rows_per_chunk = cmp::max(m / thread::available_parallelism().unwrap().get(), 1);
+        let chunks = dest.chunks_mut(rows_per_chunk);
+        let group_size = x.gs as usize;
+        for (i, chunk) in chunks.enumerate() {
+            s.spawn(move || {
+                for (j, val) in chunk.iter_mut().enumerate() {
+                    let row_start = (i * rows_per_chunk + j) * k;
+                    let mut res = 0.0f32;
+                    let mut group_sum = 0i32;
+                    for xi in (0..k).step_by(group_size) {
+                        for index_in_group in 0..group_size {
+                            let w_val = w.q[row_start + xi + index_in_group] as i32;
+                            let x_val = x.q[xi + index_in_group] as i32;
+                            group_sum += w_val * x_val;
+                        }
+                        res += group_sum as f32
+                            * w.s[(row_start + xi) / group_size]
+                            * x.s[xi / group_size];
+                        group_sum = 0;
+                    }
+                    *val = res;
+                }
+            });
+        }
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -85,5 +119,19 @@ mod tests {
         for (d, v) in dequantized.iter().zip(values.iter()) {
             assert!((d - v).abs() < 1e-2);
         }
+    }
+
+    #[test]
+    fn test_matmul() {
+        let x = QuantizedTensor::quantize(&vec![1.0, 2.0, 3.0], 3);
+        let w = QuantizedTensor::quantize(&vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], 3);
+        let m = 2;
+        let k = 3;
+        let mut dest = vec![0.0; m];
+
+        matmul(&mut dest, &x, &w, m, k);
+
+        assert_eq!(14.015871, dest[0]);
+        assert_eq!(32.039307, dest[1]);
     }
 }
