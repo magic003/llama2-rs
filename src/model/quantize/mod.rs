@@ -1,6 +1,7 @@
 use std::{cmp, thread};
 
 mod config;
+mod transformer;
 mod weights;
 
 /// The quantized tensor. It has a list of values and the scale factors for each group.
@@ -16,28 +17,33 @@ struct QuantizedTensor {
 
 impl QuantizedTensor {
     /// Creates a QuantizedTensor from f32 values.
-    pub fn quantize(values: &[f32], group_size: u32) -> QuantizedTensor {
-        let gs = group_size as usize;
-        let mut q = Vec::with_capacity(values.len());
-        let mut s = Vec::with_capacity(values.len() / gs);
+    pub fn new(values: &[f32], group_size: u32) -> QuantizedTensor {
+        let mut tensor = QuantizedTensor {
+            q: Vec::with_capacity(values.len()),
+            s: Vec::with_capacity(values.len() / group_size as usize),
+            gs: group_size,
+        };
+        tensor.quantize(values);
+        tensor
+    }
+
+    /// Quantizes the tensor values into the current instance.
+    pub fn quantize(&mut self, values: &[f32]) {
+        let gs = self.gs as usize;
+        self.q.clear();
+        self.s.clear();
         values.chunks_exact(gs).for_each(|group| {
             // find the max absolute value in the current group
             let wmax = group.iter().map(|&v| v.abs()).fold(0.0, f32::max);
             let scale = wmax / Self::Q_MAX;
 
-            s.push(scale);
+            self.s.push(scale);
             group.iter().for_each(|v| {
                 let quant_v = v / scale;
                 let quantized = quant_v.round() as i8;
-                q.push(quantized);
+                self.q.push(quantized);
             });
         });
-
-        QuantizedTensor {
-            q,
-            s,
-            gs: group_size,
-        }
     }
 
     /// Dequantizes the tensor values into f32 values.
@@ -94,7 +100,7 @@ mod tests {
         let values = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
         let group_size = 2;
 
-        let quantized = QuantizedTensor::quantize(&values, group_size);
+        let quantized = QuantizedTensor::new(&values, group_size);
 
         assert_eq!(values.len(), quantized.q.len());
         assert_eq!(values.len() / group_size as usize, quantized.s.len());
@@ -112,7 +118,7 @@ mod tests {
         let values = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
         let group_size = 2;
 
-        let quantized = QuantizedTensor::quantize(&values, group_size);
+        let quantized = QuantizedTensor::new(&values, group_size);
         let dequantized = quantized.dequantize();
 
         assert_eq!(dequantized.len(), values.len());
@@ -123,8 +129,8 @@ mod tests {
 
     #[test]
     fn test_matmul() {
-        let x = QuantizedTensor::quantize(&vec![1.0, 2.0, 3.0], 3);
-        let w = QuantizedTensor::quantize(&vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], 3);
+        let x = QuantizedTensor::new(&vec![1.0, 2.0, 3.0], 3);
+        let w = QuantizedTensor::new(&vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], 3);
         let m = 2;
         let k = 3;
         let mut dest = vec![0.0; m];
