@@ -22,7 +22,7 @@ It runs with the TinyStories [models](https://huggingface.co/karpathy/tinyllamas
 
 Running with the stories260K model:
 ```bash
-./target/release/run stories260K/stories260K.bin -z stories260K/tok512.bin -t 0.9 -s 12345 
+% ./target/release/run stories260K/stories260K.bin -z stories260K/tok512.bin -t 0.9 -s 12345 
 ```
 
 It gives:
@@ -38,7 +38,7 @@ With the same seed, it generates identical text as llama2.c.
 
 You can download other TinyStories [models](https://huggingface.co/karpathy/tinyllamas), run:
 ```bash
-./target/release/run ~/Downloads/stories110M.bin
+% ./target/release/run ~/Downloads/stories110M.bin
 ```
 
 ## Performance
@@ -58,6 +58,18 @@ This repo is the multi-thread version of llama2-rs. I also used a single thread 
 
 ## Quantization
 
+The int8 quantization is implemented in `src/model/quantize`. To run it, you need to export the quantized model first, using
+the `export.py` from [llama2.c](https://github.com/karpathy/llama2.c). For example:
+
+```bash
+% python3 export.py ~/Downloads/stories110M_q80.bin --version 2 --checkpoint ~/Downloads/stories110M.pt 
+```
+
+Then run:
+
+```bash
+% ./target/release/runq ~/Downloads/stories110M_q80.bin
+```
 
 ## Unsorted TODOs
 
