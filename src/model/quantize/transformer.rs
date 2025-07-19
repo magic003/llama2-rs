@@ -1,6 +1,6 @@
 use std::fs::File;
-use std::io::BufReader;
-use std::{io, thread};
+use std::io::{BufReader, Read, Seek};
+use std::{io, mem, thread};
 
 use crate::nn;
 
@@ -25,8 +25,8 @@ struct RunState {
     xq: QuantizedTensor, // quantized x (dim, )
     hq: QuantizedTensor, // quantized hb (hidden_dim, )
     q: Vec<f32>,         // query (dim, )
-    k: Vec<f32>,         // key (dim, )
-    v: Vec<f32>,         // value (dim, )
+    k: Vec<f32>,         // key (kv_dim, )
+    v: Vec<f32>,         // value (kv_dim, )
     att: Vec<f32>,       // attention values. (n_heads, seq_len)
     logits: Vec<f32>,    // output logits. (vocab_size, )
 
@@ -51,8 +51,8 @@ impl RunState {
             xq: QuantizedTensor::new(&vec![0.0; dim], config.group_size),
             hq: QuantizedTensor::new(&vec![0.0; hidden_dim], config.group_size),
             q: vec![0.0; dim],
-            k: vec![0.0; dim],
-            v: vec![0.0; dim],
+            k: vec![0.0; kv_dim],
+            v: vec![0.0; kv_dim],
             att: vec![0.0; config.n_heads as usize * config.seq_len as usize],
             logits: vec![0.0; config.vocab_size as usize],
 
@@ -70,7 +70,32 @@ impl Transformer {
     pub fn from_file(checkpoint_path: &str) -> io::Result<Transformer> {
         let file = File::open(checkpoint_path)?;
         let mut reader = BufReader::new(file);
+        // read magic number and version
+        let mut buf = [0; mem::size_of::<u32>()];
+        reader.read_exact(buf.as_mut_slice())?;
+        let magic_number = u32::from_le_bytes(buf);
+        if magic_number != 0x616b3432 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Bad magic number: {}", magic_number),
+            ));
+        }
+        reader.read_exact(buf.as_mut_slice())?;
+        let version = u32::from_le_bytes(buf);
+        if version != 2 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("Bad version: {}, need version 2", version),
+            ));
+        }
+
+        // read config
         let config = Config::from_reader(&mut reader)?;
+
+        // rewind and skip header bytes
+        reader.rewind()?;
+        reader.seek_relative(256)?;
+
         let weights = TransformerWeights::from_reader(&mut reader, &config)?;
         let state = RunState::new(&config);
         Ok(Transformer {
@@ -79,9 +104,11 @@ impl Transformer {
             state,
         })
     }
+}
 
+impl super::super::Transformer for Transformer {
     /// Runs the Transformer model forward pass with the given token and position.
-    pub fn forward(&mut self, token: u32, pos: usize) -> &[f32] {
+    fn forward(&mut self, token: u32, pos: usize) -> &[f32] {
         // a few convenience variables
         let config = &self.config;
         let state = &mut self.state;
@@ -107,8 +134,6 @@ impl Transformer {
             // qkv matmuls for this position
             state.xq.quantize(x);
 
-            let qw_size = dim * dim;
-            let kvw_size = dim * kv_dim;
             let wq = &weights.wq[layer];
             let wk = &weights.wk[layer];
             let wv = &weights.wv[layer];

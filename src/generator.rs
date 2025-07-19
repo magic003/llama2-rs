@@ -8,7 +8,7 @@ use crate::tokenizer;
 /// A generator for Llama-2 Transformer model inference.
 pub struct Generator {
     tokenizer: Tokenizer,
-    transformer: Transformer,
+    transformer: Box<dyn Transformer>,
     sampler: Sampler,
     report_stats: bool,
 }
@@ -17,7 +17,7 @@ impl Generator {
     /// Creates a new `Generator` instance.
     pub fn new(
         tokenizer: Tokenizer,
-        transformer: Transformer,
+        transformer: Box<dyn Transformer>,
         sampler: Sampler,
         report_stats: bool,
     ) -> Self {

@@ -4,6 +4,8 @@ mod config;
 mod transformer;
 mod weights;
 
+pub use transformer::Transformer;
+
 /// The quantized tensor. It has a list of values and the scale factors for each group.
 #[derive(Debug)]
 struct QuantizedTensor {
@@ -73,7 +75,7 @@ fn matmul(dest: &mut [f32], x: &QuantizedTensor, w: &QuantizedTensor, m: usize, 
                     let row_start = (i * rows_per_chunk + j) * k;
                     let mut res = 0.0f32;
                     let mut group_sum = 0i32;
-                    for xi in (0..k).step_by(group_size) {
+                    for xi in (0..=k - group_size).step_by(group_size) {
                         for index_in_group in 0..group_size {
                             let w_val = w.q[row_start + xi + index_in_group] as i32;
                             let x_val = x.q[xi + index_in_group] as i32;

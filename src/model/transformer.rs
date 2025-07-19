@@ -69,9 +69,11 @@ impl Transformer {
             state,
         })
     }
+}
 
+impl super::Transformer for Transformer {
     /// Runs the Transformer model forward pass with the given token and position.
-    pub fn forward(&mut self, token: u32, pos: usize) -> &[f32] {
+    fn forward(&mut self, token: u32, pos: usize) -> &[f32] {
         // a few convenience variables
         let config = &self.config;
         let state = &mut self.state;

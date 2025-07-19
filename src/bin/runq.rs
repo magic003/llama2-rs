@@ -3,7 +3,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use llama2_rs::{Generator, Sampler, Tokenizer, Transformer};
+use llama2_rs::{Generator, Sampler, Tokenizer, quantize::Transformer};
 
 const MODE_GENERATE: &str = "generate";
 const MODE_CHAT: &str = "chat";
@@ -100,7 +100,7 @@ fn main() {
     // build the Generator
     let mut generator = Generator::new(
         tokenizer,
-        transformer,
+        Box::new(transformer),
         sampler,
         true, // report stats
     );

@@ -1,7 +1,10 @@
 //! This module provides the Transformer model implementation.
 mod config;
-mod quantize;
-mod transformer;
+pub mod quantize;
+pub mod transformer;
 mod weights;
 
-pub use transformer::Transformer;
+/// The Transformer trait defines the interface for a Transformer model.
+pub trait Transformer {
+    fn forward(&mut self, token: u32, pos: usize) -> &[f32];
+}
